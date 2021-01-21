@@ -1,9 +1,9 @@
 # Project 1 - Machine learning model to predict the downloads of mobile apps
 
 # Setting the working directory
-setwd("D:/FCD/Projetos/Projeto-Feedback1")
+setwd("D:/FCD/Projetos/Projeto-Feedback1/Predicting-downloads-of-mobile-app")
 
-# Packages for loading and manipulating the data
+# Packages for loading and manipulating data
 library(data.table)
 library(lubridate)
 library(dplyr)
@@ -17,7 +17,7 @@ library(forcats)
 # Categorical variables association
 library(GoodmanKruskal)
 
-# Packages for splitting the data and machine learning
+# Packages for splitting the data and build machine learning models
 library(randomForest)
 library(class)
 library(e1071)
@@ -27,7 +27,7 @@ library(caret)
 library(C50)
 library(PRROC)
 
-# Importing functions created for this project
+# Importing customized functions
 source("src/FuncTools.R")
 
 # Importing the train data
@@ -36,6 +36,7 @@ str(train)
 
 
 # The train data contains 100000 rows and 8 columns.
+dim(train)
 View(train)
 
 # Data description
@@ -48,18 +49,19 @@ View(train)
 # - attributed_time: if user download the app after clicking an ad, this is the time of the app download
 # - is_attributed: the target that is to be predicted, indicating the app was downloaded
 # Note that ip, app, device, os, and channel are encoded.
-# ip_range: ip grouped by bins (0,1.2e+05], (1.2e+05,2.1e+05], (2.1e+05,3.65e+05] -> lables 1, 2, 3 respectively.
 
+# Features ip, app, device, os, channel and is_attibuted are categorical variables and will be
+# properly transformed into categorical type in further manipulations.
 
-# Searching for missing values
+## Searching for missing values
 sapply(train, function(x){sum(is.na(x))})
+
 # no missing values were detected, but there are rows with no values in column attributed_time
 # marked with double quotes, that is why missing values for that column were not returned. At first, 
 # this may not be a problem because in further manipulations this will be treated.
-# We can also notice that features as ip, app, device, os, channel and is_attibuted are categorical 
-# variables. These variables will be further properly transformed into categorical type.
 
-## Adding new features to be used in the descriptive analysis
+
+## Adding new features to be used in the exploratory data analysis
 train <- train %>%
   mutate(datetime = as.POSIXct(click_time, format = "%Y-%m-%d %H:%M:%S"),
          date = as.Date(datetime),
@@ -72,7 +74,7 @@ train <- train %>%
          ip_range = cut(ip, breaks = c(0,120000,210000,364757), labels = c(1,2,3)))
 str(train)
 
-################ Descriptive Analysis ###########################
+################ Exploratory Data Analysis ###########################
 
 ## Summary of the data
 summary(train)
@@ -140,7 +142,7 @@ train %>% filter(hour_download != 'NA') %>%
 # Download number reduces between 17:00-22:00 and no downloads were observed at
 # 16:00, 18:00 and 19:00.
 
-# Distribution of clicks throughtout the 4 days
+# Distribution of clicks throughtout the 4 days (acumulate)
 train %>% group_by(hour) %>%
   summarise(n = n()) %>%
   ggplot(aes(x = as.factor(hour), y = n)) +
@@ -148,6 +150,20 @@ train %>% group_by(hour) %>%
   ggtitle('Distribution of clicks throughtout the four days') +
   xlab('Hour') +
   ylab('Clicks')
+
+# Mean clicks distribution per hour
+train %>% 
+  group_by(date, hour) %>%
+  summarise(n = n()) %>%
+  group_by(hour) %>%
+  summarise(media = mean(n), std = sd(n)) %>%
+  ggplot(aes(x= as.factor(hour), y= media)) + 
+  geom_bar(stat="identity", fill = 'salmon1', color = 'salmon4',
+           position=position_dodge()) +
+  geom_errorbar(aes(ymin=media-std, ymax=media+std), width=.2,
+                position=position_dodge(.9)) +
+  xlab('Hour') +
+  ylab('Mean clicks')
 
 # It is observed that the downloads distribution followed the same trend as the distribution of clicks, i.e,
 # reduces between 16:00-22:00. Moreover, the amount of clicks begin to increase around 23:00 and 
@@ -164,7 +180,18 @@ train %>% group_by(date, minute) %>%
   xlab('Minute') +
   ylab('Clicks')
 
-# Downloads in each minute
+# And the amount of clicks per hour
+train %>% group_by(date, hour) %>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = hour, y = n)) +
+  geom_line(color = 'salmon1') +
+  geom_point(color = 'salmon4') +
+  facet_grid(. ~ date) +
+  ggtitle('Clicks per hour') +
+  xlab('Hour') +
+  ylab('Clicks')
+
+# Downloads per minute
 train %>% filter(is_attributed == 1) %>%
   group_by(date, minute) %>%
   summarise(n = n()) %>%
@@ -174,8 +201,21 @@ train %>% filter(is_attributed == 1) %>%
   facet_grid(. ~ date) +
   ggtitle('Downloads per minute') +
   xlab('Minute') +
-  ylab('Clicks')
+  ylab('Downloads')
 
+# Downloads per hour
+train %>% filter(is_attributed == 1) %>%
+  group_by(date, hour_download) %>%
+  summarise(n = n()) %>%
+  ggplot(aes(x = hour_download, y = n)) +
+  geom_line(color = 'salmon1') +
+  geom_point(color = 'salmon4') +
+  facet_grid(. ~ date) +
+  ggtitle('Downloads per hour') +
+  xlab('Hour') +
+  ylab('Downloads')
+
+# Number of clicks and downloads between 16h - 22h.
 train %>% filter(hour %in% seq(16,22)) %>%
   group_by(is_attributed) %>%
   summarise(total = n())
@@ -185,13 +225,15 @@ train %>% filter(hour %in% seq(16,22)) %>%
 train %>% group_by(minute) %>%
   summarise(n = n()) %>%
   summarise(total = mean(n))
+  
 
 # Number of clicks per day.
 train %>% group_by(date) %>%
   summarise(total = n()) %>%
-  ggplot(aes(x = date, y = total, fill = date)) +
+  mutate(freq = total * 100 / sum(total)) %>%
+  ggplot(aes(x = date, y = freq, fill = date)) +
   geom_bar(stat = 'identity', fill = 'tomato2', color = 'tomato4') +
-  ggtitle('Number of clicks per day') +
+  ggtitle('Percentage of clicks per day') +
   xlab('')+
   ylab('')
 
@@ -204,7 +246,7 @@ train %>% filter(date == '2017-11-06') %>%
 ggplot(train, aes(x = hour, fill = date)) +
   geom_bar() + 
   facet_grid(. ~ date) + 
-  ggtitle('Clicks throughout observed days') +
+  ggtitle('Clicks throughout the days') +
   xlab('Hour') +
   ylab('') +
   theme(legend.position = "none")
@@ -214,7 +256,7 @@ train %>% filter(is_attributed == 1) %>%
   ggplot(aes(x = hour_download, fill = date_download)) +
   geom_bar() +
   facet_grid(. ~ date_download) + 
-  ggtitle('Downloads throughout the observed days') +
+  ggtitle('Downloads throughout the days') +
   xlab('Hour') +
   ylab('') +
   theme(legend.position = "none")
