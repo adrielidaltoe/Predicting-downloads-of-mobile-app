@@ -289,17 +289,6 @@ rbind(Only_1_click,More_1_click)
 # 17434 IPs have more than 1 click and 17423 IPs have only one click,
 # i.e., half of the unique IPs has only 1 clique.
 
-# Top 10 IPs in clicks
-train %>% group_by(ip) %>%
-  summarise(n= n()) %>%
-  arrange(desc(n)) %>%
-  head(10) %>%
-  mutate(IP = fct_reorder(as.factor(ip), n)) %>%
-  ggplot(aes(x = n, y = IP)) +
-  geom_bar(stat = 'identity', color = 'orchid4', fill = 'orchid3') +
-  ggtitle('Top 10 IPs in clicks') +
-  xlab('Clicks') +
-  ylab('')
 
 # Verifying if ips with more clicks presented downloads.
 
@@ -312,24 +301,42 @@ train %>% filter(is_attributed == '1') %>%
 
 # preparing ips with more than 1 click
 df <- train %>% group_by(ip) %>%
-  summarise(n= n()) %>%
-  filter(n > 1)
+  summarise(clicks = n()) %>%
+  filter(clicks > 1)
 
-# inner_join train data with df by ip column
+# How many downloads came from IPs with more than 1 click?
 joined_ip <- train %>% filter(is_attributed == '1') %>%
   inner_join(df, by = 'ip')
-
-# 77 downloads were made from IPs with more than 1 click
 nrow(joined_ip)
 
+# 77 downloads were made from IPs with more than 1 click
 # And 7 downloads were made from IPs with more than 100 clicks, specifically from ips 5314, 5348, which
-# presented more than 600 clicks. 6 downloads were made from each of those IPs.
+# presented more than 600 clicks. 3 downloads were made from each of those IPs.
 joined_ip %>%
-  filter(n > 100) %>%
+  filter(clicks > 100) %>%
   group_by(ip, date_download) %>%
   summarize(total = n())
 
-# Thus, IP with higher amount of clicks does not necessarily have more downloads.
+# Thus, IP with higher amount of clicks does not necessarily have more downloads
+
+train %>% filter(is_attributed == '1') %>%
+  group_by(ip) %>%
+  summarise(downloads = n()) %>%
+  full_join(df, by = 'ip') %>%
+  replace(is.na(.), 0) %>%
+  arrange(desc(clicks)) %>%
+  head(20) %>%
+  mutate(IP = fct_reorder(as.factor(ip), desc(clicks))) %>%
+  ggplot(aes(x = IP, y = clicks)) +
+  geom_bar(stat = 'identity', color = 'orchid4', fill = 'orchid3') +
+  geom_line(aes(x = IP, y = downloads*200, group = 1), size = 1, color="#00798C") +
+  geom_point(aes(x = IP, y = downloads*200), color = '#00798C', size = 1.5) +
+  scale_y_continuous(sec.axis = sec_axis(~./200, name = "Downloads")) +
+  theme(axis.text.y.right = element_text(color = "#00798C")) +
+  ggtitle('Top 15 IPs in clicks') +
+  xlab('IP') +
+  ylab('Clicks')
+
 # Next visualization shows the distribuition of clicks and downloads throughout the IP numbers
 p0 <- ggplot(train, aes(x = seq_along(ip), y = ip)) +
   geom_point(aes(col=factor(is_attributed)), alpha=0.8, size=0.05) +
@@ -338,7 +345,7 @@ p0
 
 # It's observed that there are 3 ranges of ips with different concentrations of clicks: 0 - 120000; 120000 - 210000,
 # 210000 - 360000 (approximated values). Clicks are more concentrated at the first range and decreases
-# gradually in the second and third ranges. On the other hand, the number of downloads are
+# gradually in the second and third ranges. On the other hand, downloads are
 # dispersed through all IPs, which is shown in the next visualization.
 p1 <- train %>% filter(is_attributed == 1) %>%
   ggplot(aes(x = seq_along(ip), y = ip)) +
@@ -391,19 +398,46 @@ p3 <- train %>%
   ggtitle('Clicks per IP range')
 grid.arrange(p3, p2, ncol = 2)
 
+## IP with most clicks might be related with click fraud?
+
+# collecting IPs with most clicks
+ip_most_clicks <- train %>%
+  group_by(ip) %>%
+  summarise(n = n()) %>%
+  arrange(desc(n)) %>%
+  head(10) %>% 
+  select(ip)
+
+# Table summarizing the number of different devices and os accessing online ad through top 10 IPs
+View(train %>%
+  select(ip, device, os) %>%
+  group_by(ip) %>%
+  summarise(numero_de_modelos = length(unique(device)), numero_de_os = length(unique(os))) %>%
+  filter(ip %in% ip_most_clicks$ip))
+
+# Table summarizing the number of clicks coming from different ip, device, os pairs.
+# "ip, device, os" pairs with a big amount of clicks have a higher chance to be click fraud.
+View(train %>%
+  select(ip, device, os, is_attributed) %>%
+  group_by(ip, device, os, is_attributed) %>%
+  summarise(numero_acessos = n()) %>%
+  filter(ip %in% ip_most_clicks$ip) %>%
+  arrange(desc(numero_acessos)))
+
 ## Exploring app column
 
-# 37 app id had downloads. The next visualization shows the app ids that presented more than 3 downloads.
-train %>% filter(is_attributed == 1) %>%
+# 37 app id had downloads. The next visualization shows the top 10 apps in clicks.
+train %>% 
   group_by(app) %>%
   summarise(total = n()) %>%
-  filter(total > 3) %>%
+  arrange(desc(total)) %>%
+  head(10) %>%
   mutate(App_id = fct_reorder(as.factor(app), total)) %>%
   ggplot(aes(x = total, y = App_id)) +
   geom_bar(stat = 'identity', color ='steelblue4' , fill = 'steelblue3') +
-  ggtitle('App id with more than 3 downloads') +
+  ggtitle('Top 10 app in clicks') +
   ylab('App') +
-  xlab('Downloads')
+  xlab('Clicks')
 
 # Downloads were made by clicking on app id with more clicks?
 app_group <- train %>% group_by(app) %>% summarise(total_clicks = n())
@@ -454,14 +488,13 @@ train %>% group_by(is_attributed) %>%
   geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25) +
   theme(legend.position = "none") +
   facet_grid(.~ is_attributed) +
-  ggtitle('Clicks per device vs. downloads per device') +
+  ggtitle('Device: clicks vs. downloads') +
   ylab('')+
   xlab('Device')
 
-
-## Exploring os column
+## Exploring OS
  
-# Os columns has 130 unique values. OS 19 had the most clicks and also the most downloads.
+# OS has 130 unique values and 19 of them had the most clicks and also the most downloads.
 p3 <- train %>% group_by(os) %>%
   count() %>%
   arrange(desc(n)) %>%
@@ -469,6 +502,7 @@ p3 <- train %>% group_by(os) %>%
   ggplot(aes(x = reorder(as.factor(os), -n), y = n)) +
   geom_bar(stat = 'identity', fill = 'steelblue3') +
   xlab('os') +
+  ylab('') +
   ggtitle('5 os with most clicks')
 
 p4 <- train %>% filter(is_attributed == 1) %>%
@@ -479,6 +513,7 @@ p4 <- train %>% filter(is_attributed == 1) %>%
   ggplot(aes(x = reorder(as.factor(os), -n), y = n)) +
   geom_bar(stat = 'identity', fill = 'turquoise4') +
   xlab('os') +
+  ylab('') +
   ggtitle('5 os with most downloads')
 grid.arrange(p3, p4, ncol = 2)
 
