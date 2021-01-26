@@ -318,7 +318,6 @@ joined_ip %>%
   summarize(total = n())
 
 # Thus, IP with higher amount of clicks does not necessarily have more downloads
-
 train %>% filter(is_attributed == '1') %>%
   group_by(ip) %>%
   summarise(downloads = n()) %>%
@@ -388,7 +387,7 @@ train %>%
   ggtitle('Distribution of IP range per hour')
 
 # An interesting observation is that, despite less clicks, ip_range 3 presents more downloads than the others.
-# Let's compare the number of clicks and number of downloads for each ip-range.
+# Let's compare the number of clicks and the number of downloads for each ip-range.
 p3 <- train %>% 
   group_by(ip_range) %>%
   count() %>%
@@ -423,6 +422,72 @@ View(train %>%
   summarise(numero_acessos = n()) %>%
   filter(ip %in% ip_most_clicks$ip) %>%
   arrange(desc(numero_acessos)))
+
+
+## Exploring device column
+
+# 25 of 100 devices had downloads. Device 0 and 1 had the most downloads.
+train %>% filter(is_attributed == 1) %>%
+  group_by(device) %>%
+  summarise(total = n()) %>%
+  mutate(factor = fct_reorder(as.factor(device), total)) %>%
+  head(10) %>%
+  ggplot(aes(x = total, y = factor)) +
+  geom_bar(stat = 'identity', color = 'turquoise4', fill = 'turquoise3') +
+  ggtitle('Device id with downloads') +
+  ylab('Device') +
+  xlab('Downloads')
+
+# Next visualization presents a comparison between the devices that presented the most clicks and 
+# the number of downloads with those devices. From the barplot we notice that around 94% of the clicks
+# came from device 1 and 4.3% from device 2. Device 1 was also responsible for the most downloads (64%)
+# followed by device 0 (0.5% of the clicks) with 23%.
+train %>% group_by(is_attributed) %>%
+  count(device) %>%
+  arrange(desc(n), .by_group = TRUE) %>%
+  filter(n > 2) %>%
+  ggplot(aes(x = as.factor(device), y = n, fill = as.factor(device))) +
+  geom_bar(stat = 'identity') +
+  geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25) +
+  theme(legend.position = "none") +
+  facet_grid(.~ is_attributed) +
+  ggtitle('Device: clicks vs. downloads') +
+  ylab('')+
+  xlab('Device')
+
+## Exploring OS
+
+# OS has 130 unique values and 19 of them had the most clicks and also the most downloads.
+
+os_click <- train %>% group_by(os) %>%
+  summarise(n=n()) %>%
+  arrange(desc(n))%>%
+  mutate(os_clicks = n*100/nrow(train)) %>%
+  head(15) %>%
+  select(os, os_clicks)
+
+os_down <- train %>% filter(is_attributed == 1) %>%
+  group_by(os) %>%
+  summarise(n = n()) %>%
+  arrange(desc(n)) %>%
+  mutate(os_downloads = n*100/227) %>%
+  head(15) %>%
+  select(os, os_downloads)
+
+
+os_click %>%
+  full_join(os_down, by = 'os') %>%
+  replace(is.na(.), 0) %>%
+  ggplot() +
+  geom_bar(aes(x = as.factor(os), y = os_clicks, group=1, fill = 'os_clicks'), stat = 'identity') +
+  geom_point(aes(x = as.factor(os), y = os_downloads)) +
+  geom_line(aes(x = as.factor(os), y = os_downloads, group=1, color = 'os_downloads'), size = 1) +
+  xlab('os') +
+  ylab('Clicks or downloads (%)') +
+  scale_colour_manual(" ", values=c("os_clicks" = "blue", "os_downloads" = "red"))+
+  scale_fill_manual("",values="steelblue3")+
+  theme(legend.position = 'right')
+
 
 ## Exploring app column
 
@@ -460,62 +525,6 @@ train %>% filter(is_attributed == 1) %>%
   ggtitle('App id with more than 3 downloads') +
   ylab('Downloads') +
   xlab('App id')
-
-## Exploring device column
-
-# 25 of 100 devices had downloads. Device 0 and 1 had the most downloads.
-train %>% filter(is_attributed == 1) %>%
-  group_by(device) %>%
-  summarise(total = n()) %>%
-  mutate(factor = fct_reorder(as.factor(device), total)) %>%
-  head(10) %>%
-  ggplot(aes(x = total, y = factor)) +
-  geom_bar(stat = 'identity', color = 'turquoise4', fill = 'turquoise3') +
-  ggtitle('Device id with downloads') +
-  ylab('Device') +
-  xlab('Downloads')
-
-# Next visualization presents a comparison between the devices that presented the most clicks and 
-# the number of downloads with those devices. From the barplot we notice that around 94% of the clicks
-# came from device 1 and 4.3% from device 2. Device 1 was also responsible for the most downloads (64%)
-# followed by device 0 with 23%.
-train %>% group_by(is_attributed) %>%
-  count(device) %>%
-  arrange(desc(n), .by_group = TRUE) %>%
-  filter(n > 2) %>%
-  ggplot(aes(x = as.factor(device), y = n, fill = as.factor(device))) +
-  geom_bar(stat = 'identity') +
-  geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25) +
-  theme(legend.position = "none") +
-  facet_grid(.~ is_attributed) +
-  ggtitle('Device: clicks vs. downloads') +
-  ylab('')+
-  xlab('Device')
-
-## Exploring OS
- 
-# OS has 130 unique values and 19 of them had the most clicks and also the most downloads.
-p3 <- train %>% group_by(os) %>%
-  count() %>%
-  arrange(desc(n)) %>%
-  head(10) %>%
-  ggplot(aes(x = reorder(as.factor(os), -n), y = n)) +
-  geom_bar(stat = 'identity', fill = 'steelblue3') +
-  xlab('os') +
-  ylab('') +
-  ggtitle('5 os with most clicks')
-
-p4 <- train %>% filter(is_attributed == 1) %>%
-  group_by(os) %>%
-  count() %>%
-  arrange(desc(n)) %>%
-  head(10) %>%
-  ggplot(aes(x = reorder(as.factor(os), -n), y = n)) +
-  geom_bar(stat = 'identity', fill = 'turquoise4') +
-  xlab('os') +
-  ylab('') +
-  ggtitle('5 os with most downloads')
-grid.arrange(p3, p4, ncol = 2)
 
 
 ## Exploring channel column
