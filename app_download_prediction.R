@@ -1,7 +1,7 @@
 # Project 1 - Machine learning model to predict the downloads of mobile apps
 
 # Setting the working directory
-setwd("D:/FCD/Projetos/Projeto-Feedback1/Predicting-downloads-of-mobile-app")
+setwd("D:/DataScienceAcademy/FCD/Projetos/Projeto-Feedback1/Predicting-downloads-of-mobile-app")
 
 # Packages for loading and manipulating data
 library(data.table)
@@ -270,7 +270,7 @@ train %>% filter(is_attributed == 1) %>%
 # Thus, it is noticeable that data is time dependent. 
 
 
-## Exploring the IP column
+## Exploring the IP attribute
 
 # There are 34857 unique ip, which means that part of the clicks came from the same ip.
 # How many IPs have more than 1 click? 
@@ -424,7 +424,7 @@ View(train %>%
   arrange(desc(numero_acessos)))
 
 
-## Exploring device column
+## Exploring device attribute
 
 # 25 of 100 devices had downloads. Device 0 and 1 had the most downloads.
 train %>% filter(is_attributed == 1) %>%
@@ -455,10 +455,14 @@ train %>% group_by(is_attributed) %>%
   ylab('')+
   xlab('Device')
 
-## Exploring OS
+## Exploring OS attribute
 
-# OS has 130 unique values and 19 of them had the most clicks and also the most downloads.
+# OS has 130 unique values. Next visualization shows the top 15 OS in clicks and downloads.
+# Note that the top OS in downloads presents some OS that is not in the list of the
+# top OS in clicks. But the OS with higher traffic is among those OS with higher frequency
+# of downloads.
 
+# Top 15 OS in clicks
 os_click <- train %>% group_by(os) %>%
   summarise(n=n()) %>%
   arrange(desc(n))%>%
@@ -466,6 +470,7 @@ os_click <- train %>% group_by(os) %>%
   head(15) %>%
   select(os, os_clicks)
 
+# Top 15 OS in downloads
 os_down <- train %>% filter(is_attributed == 1) %>%
   group_by(os) %>%
   summarise(n = n()) %>%
@@ -474,7 +479,7 @@ os_down <- train %>% filter(is_attributed == 1) %>%
   head(15) %>%
   select(os, os_downloads)
 
-
+#Plot
 os_click %>%
   full_join(os_down, by = 'os') %>%
   replace(is.na(.), 0) %>%
@@ -489,82 +494,81 @@ os_click %>%
   theme(legend.position = 'right')
 
 
-## Exploring app column
+## Exploring app attribute
 
 # 37 app id had downloads. The next visualization shows the top 10 apps in clicks.
-train %>% 
+
+# Top 10 app in clicks
+app_click <- train %>%
   group_by(app) %>%
   summarise(total = n()) %>%
-  arrange(desc(total)) %>%
-  head(10) %>%
-  mutate(App_id = fct_reorder(as.factor(app), total)) %>%
-  ggplot(aes(x = total, y = App_id)) +
-  geom_bar(stat = 'identity', color ='steelblue4' , fill = 'steelblue3') +
-  ggtitle('Top 10 app in clicks') +
-  ylab('App') +
-  xlab('Clicks')
+  mutate(app_clicks = total*100/nrow(train)) %>%
+  select(app, app_clicks) %>%
+  arrange(desc(app_clicks))
 
-# Downloads were made by clicking on app id with more clicks?
-app_group <- train %>% group_by(app) %>% summarise(total_clicks = n())
-app_group %>% arrange(desc(total_clicks)) # app id 3 had the most clicks, 18279 
-
-# However, the following graph shows that the app id with most downloads was not the ones 
-# with the most clicks.
-train %>% filter(is_attributed == 1) %>%
+# Apps with at least 2 downloads
+app_down <- train %>% 
+  filter(is_attributed == 1) %>%
   group_by(app) %>%
-  summarise(total_downloads = n()) %>%
-  inner_join(app_group, by = 'app') %>%
-  mutate(app = fct_reorder(as.factor(app), desc(total_downloads))) %>%
-  filter(total_downloads > 3) %>%
-  ggplot(aes(x = app, y = total_downloads)) +
-  geom_bar(stat = 'identity') +
-  geom_line(aes(x = app, y = total_clicks/200, group = 1), size = 1, color="blue") +
-  geom_point(aes(x = app, y = total_clicks/200), color = 'blue', size = 1.5) +
-  scale_y_continuous(sec.axis = sec_axis(~.*200, name = "Total clicks")) +
-  theme(axis.text.y.right = element_text(color = "blue")) +
-  ggtitle('App id with more than 3 downloads') +
-  ylab('Downloads') +
-  xlab('App id')
+  summarise(total = n()) %>%
+  filter(total >= 2) %>%
+  mutate(app_downloads = total*100/sum(total)) %>%
+  select(app, app_downloads) 
 
+# plot
+app_down %>%
+  full_join(head(app_click,10), by = 'app') %>%
+  replace(is.na(.), 0) %>%
+  ggplot() +
+  geom_bar(aes(x = as.factor(app), y = app_clicks, fill = 'app_clicks'), stat = 'identity') +
+  geom_point(aes(x = as.factor(app), y = app_downloads)) +
+  geom_line(aes(x = as.factor(app), y = app_downloads, group=1, color = 'app_downloads'), size = 1) +
+  xlab('app') +
+  ylab('Clicks or downloads (%)') +
+  scale_colour_manual(" ", values=c("app_clicks" = "blue", "app_downloads" = "red"))+
+  scale_fill_manual("",values="turquoise4")+
+  theme(legend.position = 'right')
 
-## Exploring channel column
+## Exploring channel attribute
 
 # Channel has 161 unique values
 
 # Let's look at the distribution of clicks in those channels. All 161 channels had clicks, next visualization
-# shows top 10 channels in clicks.
-train %>% group_by(channel) %>%
-  count(channel) %>%
-  mutate(channel = as.factor(channel)) %>%
-  arrange(desc(n)) %>%
-  head(10) %>%
-  ggplot(aes(x = reorder(channel, -n), y = n)) +
-  geom_bar(stat = 'identity', color = 'wheat4', fill = 'thistle4') +
-  ggtitle('Top Channels') +
-  xlab('Channel') +
-  ylab('')
+# shows that top 10 channels in clicks are not among the top 10 channels in downloads.
 
-# Let's look at the distribution of click and downloads within those channels.
+channel_click <- train %>% group_by(channel) %>%
+  summarise(channel_clicks = n()) %>%
+  arrange(desc(channel_clicks)) %>%
+  head(10)
+  
 
-df <- train %>% group_by(channel) %>%
-  count(channel)
-
-train %>% filter(is_attributed == 1) %>%
+channel_down <- train %>%
+  filter(is_attributed == 1) %>%
   group_by(channel) %>%
-  summarise(total = n()) %>%
-  inner_join(df, 'channel') %>%
-  filter(total > 2) %>%
-  ggplot(aes(x = reorder(as.factor(channel), -total), y = total)) +
-  geom_bar(stat = 'identity') +
-  geom_line(aes(x = as.factor(channel), y = n/10, group = 1), size = 1, color="blue") +
-  geom_point(aes(x = as.factor(channel), y = n/10), color = 'blue', size = 1.5) +
-  scale_y_continuous(sec.axis = sec_axis(~.*10, name = "Total clicks")) +
-  theme(axis.text.y.right = element_text(color = "blue")) +
-  ggtitle('Channels with more than 2 downloads') +
+  summarise(channel_downloads = n()) %>%
+  arrange(desc(channel_downloads)) %>%
+  head(10) %>%
+  full_join(channel_click, by = 'channel') %>%
+  replace(is.na(.), 0)
+  
+
+p4 <- channel_down %>%
+  ggplot(aes(x = reorder(as.factor(channel), -channel_clicks), y = channel_clicks)) +
+  geom_bar(stat = 'identity', color = 'wheat4', fill = 'thistle4') +
+  ggtitle('Top 10 Channels in clicks') +
+  xlab('') +
+  ylab('Clicks')
+
+
+p5 <- channel_down %>%
+  ggplot(aes(x = reorder(as.factor(channel), -channel_clicks), y = channel_downloads)) +
+  geom_bar(stat = 'identity', color = 'wheat4', fill = 'violetred4') +
+  ggtitle('Top 10 channels in downloads') +
   ylab('Downloads') +
   xlab('Channel')
-# Once more, the channel with higher ammount of clicks wasn't the one with more downloads.
+grid.arrange(p4, p5, ncol = 1)
 
+# Once more, the channel with higher ammount of clicks wasn't the one with more downloads.
 
 ######### Data transformation and feature engineering ##############################
 
@@ -609,7 +613,7 @@ train_cat <- train_cat %>%
          ip_h_dev = as.factor(ip_h_dev))
 
 # The next functions group the categories of app, channel, os, device variables. group_categories() 
-# mantain all the categories that have more than 10 downloads and group the rest. he new variables 
+# mantain all the categories that have more than 10 downloads and group the rest. The new variables 
 # created by this function are app_group, channel_group, os_group and device_group. group_target_prop(),
 # instead of using the download absolut frequency, groups the categories according to the relative 
 # frequency of downloads. It uses the minimum and maximum relative frequencies to divide the categories 
@@ -695,16 +699,18 @@ for(var in features){
   plot(datagk)
 }
 
-# The p-value from x2 test shows that is_attributed, date, hour, wday and minute are independent of each other, 
-# which is confirmed by the association coefficients of the tests applied.
+# The p-value from x2 test shows that is_attributed is independent of hour, wday, min_group, ip_wday_hour,
+# ip_hour_app, ip_hour_channel, ip_hour_device, ip_hour_os, which is confirmed by the association 
+# coefficients obtained with Theil's U, Cramer's V and Goodman's and Kruscak's tau.
+
 # The correlation plot illustrates the asymmetry: is_attributed is somehow predicted if
 # the value of some x variables is known, but much less information can be retrived by only knowing
 # is_attributed. The association x -> y is stronger with variables app and channel, and weaker
-# with device and os. The variable date presented no association with is_attributed.Furthermore, 
-# channel and app have strong association; and device presented moderate association with add, channel
-# and os. The lack of symmetry in this data is clearly shown in the theil_sym visualization, where
-# only app and channel presented symmetry, i.e. app can be somewhat determined if channel is known, and
-# vice-versa. 
+# with device and os. Furthermore, channel and app are strongly associated; while device presented moderate
+# association with add, channel and os. The lack of symmetry in this data is clearly shown by theil_sym 
+# visualization, where only app and channel presented symmetry, i.e. app can be somewhat determined if 
+# channel is known, and vice-versa. 
+
 # Cramer's V coefficient gives no information about asymmetry of association, 
 # however, the predicted association strengh given by Cramer's V for x -> y, being y is_attributed
 # was somewhat comparable with those of Theil's U. On the other hand, Goodman and Kruskal tau coefficient
