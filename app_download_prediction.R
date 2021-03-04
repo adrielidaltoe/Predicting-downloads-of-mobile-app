@@ -1,5 +1,6 @@
 # Project 1 - Machine learning model to predict the downloads of mobile apps
 
+
 # Setting the working directory
 setwd("D:/DataScienceAcademy/FCD/Projetos/Projeto-Feedback1/Predicting-downloads-of-mobile-app")
 
@@ -25,7 +26,10 @@ library(caTools)
 library(ROSE)
 library(caret)
 library(C50)
-library(PRROC)
+library(ROCR)
+
+# Data balancing
+library(DMwR)
 
 # Importing customized functions
 source("src/FuncTools.R")
@@ -109,14 +113,18 @@ table(train$is_attributed)
 # 227 downloads from 100000 clicks.
 
 # Visualizing the proportion between app downloads and clicks
+# Pie chart
 train %>% group_by(is_attributed) %>%
   summarise(n = n()) %>%
-  mutate(is_attributed = ifelse(is_attributed == 0, 'Clicks', 'Click and download')) %>%
-  ggplot(aes(x = is_attributed, y = n, fill = is_attributed)) +
-  geom_bar(stat = 'identity') +
-  ggtitle('Number of app downloads') +
-  xlab('')+
-  ylab('')
+  mutate(is_attributed = ifelse(is_attributed == 0, 'Clique', 'Download')) %>%
+  mutate(n=n*100/sum(n)) %>%
+  mutate(ypos = cumsum(n)-0.5*n) %>%
+  mutate(label = paste(n, '%', sep='')) %>%
+  ggplot(aes(x="", y=n, fill=is_attributed)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + 
+  geom_text(aes(y = ypos, label = label), color = "white")
 
 # Note that only 0.227% of the clicks resulted in the download of the product.
 # Moreover, the classes are imbalanced, which arises some problems in training ML algorithms, that are:
@@ -127,8 +135,8 @@ train %>% group_by(is_attributed) %>%
 # The third problem is noise. Noisy data has a serius impact on minority classes than majority classes.
 # Furthermore, standard ML algorithms tends to treat minority classes as noise. Thus, class imbalance will have to be treated
 # before presenting the data to the algorithm.
-
 names(train)
+
 ## What time did the downloads occur?
 train %>% filter(hour_download != 'NA') %>%
   group_by(hour_download) %>%
@@ -246,8 +254,8 @@ train %>% filter(date == '2017-11-06') %>%
 ggplot(train, aes(x = hour, fill = date)) +
   geom_bar() + 
   facet_grid(. ~ date) + 
-  ggtitle('Clicks throughout the days') +
-  xlab('Hour') +
+  ggtitle('Cliques por dia') +
+  xlab('Hora') +
   ylab('') +
   theme(legend.position = "none")
 
@@ -256,8 +264,8 @@ train %>% filter(is_attributed == 1) %>%
   ggplot(aes(x = hour_download, fill = date_download)) +
   geom_bar() +
   facet_grid(. ~ date_download) + 
-  ggtitle('Downloads throughout the days') +
-  xlab('Hour') +
+  ggtitle('Downloads por dia') +
+  xlab('Hora') +
   ylab('') +
   theme(legend.position = "none")
 
@@ -286,6 +294,7 @@ Only_1_click <- train %>% group_by(ip) %>%
   nrow()
 
 rbind(Only_1_click,More_1_click)
+
 # 17434 IPs have more than 1 click and 17423 IPs have only one click,
 # i.e., half of the unique IPs has only 1 clique.
 
@@ -295,9 +304,10 @@ rbind(Only_1_click,More_1_click)
 # 6 downloads came from 2 IPs; 221 downloads were made from different IPs.
 train %>% filter(is_attributed == '1') %>%
   group_by(ip) %>%
-  summarise(downloads_per_ip = n()) %>%
-  group_by(downloads_per_ip) %>%
+  summarise(downloads_por_ip = n()) %>%
+  group_by(downloads_por_ip) %>%
   summarise(number_of_occurrence = n())
+
 
 # preparing ips with more than 1 click
 df <- train %>% group_by(ip) %>%
@@ -324,7 +334,7 @@ train %>% filter(is_attributed == '1') %>%
   full_join(df, by = 'ip') %>%
   replace(is.na(.), 0) %>%
   arrange(desc(clicks)) %>%
-  head(20) %>%
+  head(15) %>%
   mutate(IP = fct_reorder(as.factor(ip), desc(clicks))) %>%
   ggplot(aes(x = IP, y = clicks)) +
   geom_bar(stat = 'identity', color = 'orchid4', fill = 'orchid3') +
@@ -332,9 +342,9 @@ train %>% filter(is_attributed == '1') %>%
   geom_point(aes(x = IP, y = downloads*200), color = '#00798C', size = 1.5) +
   scale_y_continuous(sec.axis = sec_axis(~./200, name = "Downloads")) +
   theme(axis.text.y.right = element_text(color = "#00798C")) +
-  ggtitle('Top 15 IPs in clicks') +
+  ggtitle('15 IPs com maior tráfego') +
   xlab('IP') +
-  ylab('Clicks')
+  ylab('Cliques')
 
 # Next visualization shows the distribuition of clicks and downloads throughout the IP numbers
 p0 <- ggplot(train, aes(x = seq_along(ip), y = ip)) +
@@ -350,8 +360,7 @@ p1 <- train %>% filter(is_attributed == 1) %>%
   ggplot(aes(x = seq_along(ip), y = ip)) +
   geom_point(color = 'steelblue3') +
   labs(x = 'index', y = 'IP') +
-  ggtitle('Distribution of downloads in IPs')
-p1
+  ggtitle('Distribuição dos downloads por IPs')
 
 # Investigating the number of downloads in each ip range
 p2 <- train %>% filter(is_attributed == 1) %>%
@@ -359,8 +368,8 @@ p2 <- train %>% filter(is_attributed == 1) %>%
   count() %>%
   ggplot(aes(x = ip_range, y = n)) + 
   geom_bar(stat = 'identity', fill = 'steelblue4') +
-  labs(x = '', y = 'Downloads') +
-  ggtitle('Downloads per IP range')
+  labs(x = 'IP range', y = 'Downloads') +
+  ggtitle('Downloads por IP range')
 grid.arrange(p1, p2, ncol = 2)
 
 # Exploring the distribution of ips in each day
@@ -393,8 +402,8 @@ p3 <- train %>%
   count() %>%
   ggplot(aes(x = ip_range, y = n)) + 
   geom_bar(stat = 'identity', fill = 'steelblue4') +
-  labs(x = '', y = 'Clicks') +
-  ggtitle('Clicks per IP range')
+  labs(x = 'IP range', y = 'Cliques') +
+  ggtitle('Cliques por IP range')
 grid.arrange(p3, p2, ncol = 2)
 
 ## IP with most clicks might be related with click fraud?
@@ -427,33 +436,37 @@ View(train %>%
 ## Exploring device attribute
 
 # 25 of 100 devices had downloads. Device 0 and 1 had the most downloads.
-train %>% filter(is_attributed == 1) %>%
-  group_by(device) %>%
-  summarise(total = n()) %>%
-  mutate(factor = fct_reorder(as.factor(device), total)) %>%
-  head(10) %>%
-  ggplot(aes(x = total, y = factor)) +
-  geom_bar(stat = 'identity', color = 'turquoise4', fill = 'turquoise3') +
-  ggtitle('Device id with downloads') +
-  ylab('Device') +
-  xlab('Downloads')
 
 # Next visualization presents a comparison between the devices that presented the most clicks and 
 # the number of downloads with those devices. From the barplot we notice that around 94% of the clicks
 # came from device 1 and 4.3% from device 2. Device 1 was also responsible for the most downloads (64%)
 # followed by device 0 (0.5% of the clicks) with 23%.
-train %>% group_by(is_attributed) %>%
-  count(device) %>%
-  arrange(desc(n), .by_group = TRUE) %>%
-  filter(n > 2) %>%
-  ggplot(aes(x = as.factor(device), y = n, fill = as.factor(device))) +
-  geom_bar(stat = 'identity') +
-  geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25) +
-  theme(legend.position = "none") +
-  facet_grid(.~ is_attributed) +
-  ggtitle('Device: clicks vs. downloads') +
-  ylab('')+
-  xlab('Device')
+d1 <- train %>% filter(is_attributed == 0) %>%
+  group_by(device) %>%
+  summarise(total = n()) %>%
+  mutate(total = total*100/sum(total)) %>%
+  mutate(factor = fct_reorder(as.factor(device), total)) %>%
+  head(10) %>%
+  ggplot(aes(x = total, y = factor)) +
+  geom_bar(stat = 'identity', color = '#E7861B', fill = '#E7861B') +
+  scale_x_continuous(breaks = seq(0, 100, by = 10)) +
+  ggtitle('Cliques') +
+  ylab('Device') +
+  xlab('Cliques (%)')
+
+d2 <- train %>% filter(is_attributed == 1) %>%
+  group_by(device) %>%
+  summarise(total = n()) %>%
+  mutate(total = total*100/ sum(total))%>%
+  mutate(factor = fct_reorder(as.factor(device), total)) %>%
+  head(10) %>%
+  ggplot(aes(x = total, y = factor)) +
+  geom_bar(stat = 'identity', color = '#95A900', fill = '#95A900') +
+  ggtitle('Downloads') +
+  ylab('Device') +
+  xlab('Downloads (%)')
+grid.arrange(d1, d2, ncol = 2)
+
 
 ## Exploring OS attribute
 
@@ -479,19 +492,34 @@ os_down <- train %>% filter(is_attributed == 1) %>%
   head(15) %>%
   select(os, os_downloads)
 
-#Plot
-os_click %>%
-  full_join(os_down, by = 'os') %>%
-  replace(is.na(.), 0) %>%
-  ggplot() +
-  geom_bar(aes(x = as.factor(os), y = os_clicks, group=1, fill = 'os_clicks'), stat = 'identity') +
-  geom_point(aes(x = as.factor(os), y = os_downloads)) +
-  geom_line(aes(x = as.factor(os), y = os_downloads, group=1, color = 'os_downloads'), size = 1) +
-  xlab('os') +
-  ylab('Clicks or downloads (%)') +
-  scale_colour_manual(" ", values=c("os_clicks" = "blue", "os_downloads" = "red"))+
-  scale_fill_manual("",values="steelblue3")+
-  theme(legend.position = 'right')
+# Clicks
+o1 <- train %>% group_by(os) %>%
+  summarise(n=n()) %>%
+  arrange(desc(n))%>%
+  mutate(os_clicks = n*100/sum(n)) %>%
+  head(10) %>%
+  mutate(os = fct_reorder(as.factor(os), os_clicks)) %>%
+  ggplot(aes(x = os_clicks, y = os)) +
+  geom_bar(stat = 'identity', color = '#00BA42', fill = '#00BA42') +
+  ggtitle('Cliques') +
+  ylab('os') +
+  xlab('Cliques (%)')
+
+# Downloads
+o2 <- train %>% filter(is_attributed == 1) %>%
+  group_by(os) %>%
+  summarise(n = n()) %>%
+  arrange(desc(n)) %>%
+  mutate(os_downloads = n*100/sum(n)) %>%
+  head(10) %>%
+  mutate(os = fct_reorder(as.factor(os), os_downloads)) %>%
+  ggplot(aes(x = os_downloads, y = os)) +
+  geom_bar(stat = 'identity', color = '#00C08D', fill = '#00C08D') +
+  ggtitle('Downloads') +
+  ylab('os') +
+  xlab('Downloads (%)')
+grid.arrange(o1, o2, ncol = 2)
+
 
 
 ## Exploring app attribute
@@ -499,35 +527,36 @@ os_click %>%
 # 37 app id had downloads. The next visualization shows the top 10 apps in clicks.
 
 # Top 10 app in clicks
-app_click <- train %>%
+app1<-train %>%
   group_by(app) %>%
   summarise(total = n()) %>%
-  mutate(app_clicks = total*100/nrow(train)) %>%
+  mutate(app_clicks = total*100/sum(total)) %>%
   select(app, app_clicks) %>%
-  arrange(desc(app_clicks))
+  head(10) %>%
+  mutate(app = fct_reorder(as.factor(app), app_clicks)) %>%
+  ggplot(aes(x = app_clicks, y = app)) +
+  geom_bar(stat = 'identity', color = '#F37B59', fill = '#F37B59') +
+  ggtitle('Cliques') +
+  ylab('app') +
+  xlab('Cliques (%)')
+  
 
 # Apps with at least 2 downloads
-app_down <- train %>% 
+app2<-train %>% 
   filter(is_attributed == 1) %>%
   group_by(app) %>%
   summarise(total = n()) %>%
-  filter(total >= 2) %>%
   mutate(app_downloads = total*100/sum(total)) %>%
-  select(app, app_downloads) 
+  select(app, app_downloads) %>%
+  head(10) %>%
+  mutate(app = fct_reorder(as.factor(app), app_downloads)) %>%
+  ggplot(aes(x = app_downloads, y = app)) +
+  geom_bar(stat = 'identity', color = '#ED8141', fill = '#ED8141') +
+  ggtitle('Downloads') +
+  ylab('app') +
+  xlab('Downloads (%)')
+grid.arrange(app1, app2, ncol = 2)
 
-# plot
-app_down %>%
-  full_join(head(app_click,10), by = 'app') %>%
-  replace(is.na(.), 0) %>%
-  ggplot() +
-  geom_bar(aes(x = as.factor(app), y = app_clicks, fill = 'app_clicks'), stat = 'identity') +
-  geom_point(aes(x = as.factor(app), y = app_downloads)) +
-  geom_line(aes(x = as.factor(app), y = app_downloads, group=1, color = 'app_downloads'), size = 1) +
-  xlab('app') +
-  ylab('Clicks or downloads (%)') +
-  scale_colour_manual(" ", values=c("app_clicks" = "blue", "app_downloads" = "red"))+
-  scale_fill_manual("",values="turquoise4")+
-  theme(legend.position = 'right')
 
 ## Exploring channel attribute
 
@@ -536,37 +565,30 @@ app_down %>%
 # Let's look at the distribution of clicks in those channels. All 161 channels had clicks, next visualization
 # shows that top 10 channels in clicks are not among the top 10 channels in downloads.
 
-channel_click <- train %>% group_by(channel) %>%
+c1 <- train %>% group_by(channel) %>%
   summarise(channel_clicks = n()) %>%
+  mutate(channel_clicks = channel_clicks*100/sum(channel_clicks)) %>%
   arrange(desc(channel_clicks)) %>%
-  head(10)
+  head(10) %>%
+  ggplot(aes(x = channel_clicks, y = reorder(as.factor(channel), channel_clicks))) +
+  geom_bar(stat = 'identity', color = 'wheat4', fill = 'thistle4') +
+  ggtitle('Cliques') +
+  xlab('Cliques (%)') +
+  ylab('Channel')
   
-
-channel_down <- train %>%
+c2 <- train %>%
   filter(is_attributed == 1) %>%
   group_by(channel) %>%
   summarise(channel_downloads = n()) %>%
   arrange(desc(channel_downloads)) %>%
   head(10) %>%
-  full_join(channel_click, by = 'channel') %>%
-  replace(is.na(.), 0)
-  
-
-p4 <- channel_down %>%
-  ggplot(aes(x = reorder(as.factor(channel), -channel_clicks), y = channel_clicks)) +
-  geom_bar(stat = 'identity', color = 'wheat4', fill = 'thistle4') +
-  ggtitle('Top 10 Channels in clicks') +
-  xlab('') +
-  ylab('Clicks')
-
-
-p5 <- channel_down %>%
-  ggplot(aes(x = reorder(as.factor(channel), -channel_clicks), y = channel_downloads)) +
+  ggplot(aes(x = channel_downloads, y = reorder(as.factor(channel), channel_downloads))) +
   geom_bar(stat = 'identity', color = 'wheat4', fill = 'violetred4') +
-  ggtitle('Top 10 channels in downloads') +
-  ylab('Downloads') +
-  xlab('Channel')
-grid.arrange(p4, p5, ncol = 1)
+  ggtitle('Downloads') +
+  xlab('Downloads (%)') +
+  ylab('Channel')
+grid.arrange(c1, c2, ncol = 2) 
+
 
 # Once more, the channel with higher ammount of clicks wasn't the one with more downloads.
 
@@ -580,7 +602,6 @@ train_cat <- train %>%
          channel = as.factor(channel),
          is_attributed = as.factor(is_attributed),
          wday = as.factor(wday),
-         hour = as.factor(hour),
          min_group = cut(minute, breaks = c(0,10,20,30,40,50,60), labels = c(1,2,3,4,5,6), include.lowest = TRUE)) %>%
   select(-c('click_time', 'attributed_time','attribute_POSIX', 'date_download','hour_download'))
 
@@ -605,13 +626,7 @@ train_cat <- train_cat %>%
   add_count(ip, hour, device, name = 'ip_h_dev') %>%
   select(-c('datetime'))
 
-train_cat <- train_cat %>%
-  mutate(ip_wday_h = as.factor(ip_wday_h),
-         ip_h_channel = as.factor(ip_h_channel),
-         ip_h_os = as.factor(ip_h_os),
-         ip_hour_app = as.factor(ip_hour_app),
-         ip_h_dev = as.factor(ip_h_dev))
-
+str(train_cat)
 # The next functions group the categories of app, channel, os, device variables. group_categories() 
 # mantain all the categories that have more than 10 downloads and group the rest. The new variables 
 # created by this function are app_group, channel_group, os_group and device_group. group_target_prop(),
@@ -622,7 +637,6 @@ train_cat <- train_cat %>%
 names <- c('app','channel','os','device')
 train_cat <- group_categories(train_cat, names, 'is_attributed')
 train_cat <- group_target_prop(train_cat, names, 'is_attributed')
-View(train_cat)
 
 ######### Studying the associations between variables #########
 
@@ -736,152 +750,540 @@ ggplot(aes(x = is_attributed, y = cont_time, fill = is_attributed)) +
   ggtitle('Boxplot of cont_time for each category of is_attributed')
 
 
-##################### Data split ##################
 
-train_model <- train_cat %>% select(-c(date))
+######## Training machine learnig models ##################
+
+## Dataframe to save the results of training
+predictive_modeling_results <- as.data.frame(matrix(nrow = 0, ncol = 7))
+names(predictive_modeling_results) <- c('model', 'ROC', 'Sens', 'Spec', 'ROCSD', 'SensSD', 'SpecSD')
+
+## Dataframe to save the prediction results in test data
+predictions <- as.data.frame(matrix(nrow = 0, ncol = 3))
+names(predictions) <- c('model', 'roc_auc', 'prc_auc')
+
+
+## Removing irrelevant features according to statistical tests. 
+# The resp_group attributes will be removed because they have weaker association with is_attributed
+names(train_cat)
+train_model <- train_cat %>% select(c(app, device, os, channel, is_attributed, 
+                                      ip_range, ip_h_dev, app_group, channel_group,
+                                      os_group, device_group))
+
+### Data split
+
+str(train_model)
+names(train_model)
 
 set.seed(1045)
-sample <- sample.split(train_model$is_attributed, SplitRatio = 0.70)
+sample <- sample.split(train_model$is_attributed, SplitRatio = 0.80)
 
-train_set <- subset(train_model, sample == TRUE)
-test <- subset(train_model, sample == FALSE)
+train_data <- subset(train_model, sample == TRUE)
+test_data <- subset(train_model, sample == FALSE)
 
-dim(train_set)
-dim(test)
-table(test$is_attributed)
+dim(train_data)
+dim(test_data)
+table(train_data$is_attributed)
+table(test_data$is_attributed)
 
-#################### Feature Selection ###############
 
-# Feature selection is important for two reasons: first, we have to keep the model as simple as
-# possible; and second, using insignificant variables can impact the model performance.
+# Changing the labels of is_attributed to 0 == no and 1 == yes. This is a requirement of 
+# caret package
 
-# Methods: 
-# 1. filter methods: correlation/association, hypothesis test, information gain
-# 2. wrapper methods: forward selection (variables are being added one by one), backward selection 
-# (variables are droped one by one), stepwise selection (both forward and backward, i.e., at each
-# iteration a variable can be added or droped from the model)
-# 3. embedded method
+train_data <- train_data %>% 
+  mutate(is_attributed = factor(is_attributed, labels = c('no','yes')))
 
-# Evaluating the most important features using Random Forest, the original variables are not
-# used because they have more than 53 categorical variables.
-# Using random forest with importance = TRUE
+test_data <- test_data %>% 
+  mutate(is_attributed = factor(is_attributed, labels = c('no','yes')))
 
-names1 <- names(train_set)[-c(1:6,22:25)]
-names2 <- names(train_set)[-c(1:6,18:21)]
-var = list(names1, names2)
 
-for(names in var){
-  set.seed(1045)
-  feature_imp <- randomForest(x=train_set[, ..names], y=train_set$is_attributed,
-                              importance = TRUE)
-  varImpPlot(feature_imp)
+#### Training ML models ######
+
+# Parameters used during training
+fitControl <- trainControl(method = "cv",
+                           number = 5,
+                           classProbs = TRUE,
+                           summaryFunction = twoClassSummary,
+                           verboseIter = TRUE)
+
+########### Building a base-model ####################
+grid <- expand.grid(.winnow = c(TRUE), .trials=c(1), .model="tree" )
+
+set.seed(1045)
+c50_base.model <- train(x = train_data[, -c('is_attributed')],
+                        y = train_data$is_attributed,
+                        metric = 'ROC',
+                        tuneGrid = grid, 
+                        trControl = fitControl, method="C5.0",verbose=FALSE)
+
+# Adding the results to a dataframe
+predictive_modeling_results <- rbind(predictive_modeling_results, 
+                                     cbind(setNames(as.data.frame(c('c50_base.model')), c('model')), 
+                                           c50_base.model$results[,-c(1:3)]))
+
+## Saving the model 
+saveRDS(c50_base.model, "models/c50_base.rds")
+
+
+# Evaluating model c50_base.model with training data
+pred <- as.data.frame(evaluate_model_prob(c50_base.model, test_data[,-c('is_attributed')],
+                                          test_data$is_attributed))
+
+# saving results in predictions dataframe
+predictions <- rbind(predictions, 
+                     cbind(setNames(as.data.frame(c('c50_base.model')), c('model')), pred))
+
+
+
+########### Balancing train_set ############
+
+### Evaluating SMOTE perc.over parameter ### 
+
+perc.ranges <- c(200,300,400,500,700,1000,1500,2000,3000,5000,10000,20000)
+
+results = data.frame(matrix(nrow = 0, ncol = 4))
+names(results) = c('perc.over', 'auc_cv', 'std', 'auc_test_data')
+
+set.seed(1042)
+for (i in perc.ranges){
+  
+  # balancing the data
+  smoted_data <- SMOTE('is_attributed' ~., data = train_data, perc.over = i, k = 5,
+                       perc.under = 200, set.seed = 1045)
+  
+  # Training the model with 5-fold cross validation
+  fitControl <- trainControl(method = "cv",
+                             number = 5,
+                             classProbs = TRUE,
+                             summaryFunction = twoClassSummary,
+                             verboseIter = TRUE)
+  
+  grid <- expand.grid(.winnow = c(TRUE), .trials=c(1), .model="tree" )
+  
+  c50model <- train(x = smoted_data[, -c('is_attributed')],
+                    y = smoted_data$is_attributed,
+                    metric = 'ROC',
+                    tuneGrid = grid, 
+                    trControl = fitControl, method="C5.0",verbose=FALSE)
+  
+  # Predictions on test_data
+  pred<-prediction(predict(c50model, newdata = test_data[,-c('is_attributed')], type = 'prob')[, 2], 
+                   labels =test_data$is_attributed, label.ordering = c('no', 'yes'))
+  
+  auc_ROCR <- performance(pred, measure = "auc")
+  
+  # Saving results in a dataframe
+  results[(length(results$perc.over)+1), 1] <- i
+  results[(length(results$perc.over)), 2] <- c50model$results$ROC
+  results[(length(results$perc.over)), 3] <- c50model$results$ROCSD
+  results[(length(results$perc.over)), 4] <- auc_ROCR@y.values[[1]]
 }
 
-########## Training C5.0 model ##########################
 
-##### Using features selected with Random Forest ###########
+# Saving smote tuning results 
+balancing_tuning <- write.csv(results, 'balancing_tuning.csv', row.names = FALSE)
 
-### Mean decrease accuracy
-var = names(train_set)[c(18:21,9,8,10,12)]
+# Plot smote tuning results
+colors <- c('cross-validation' = 'black', 'test on test_data' = 'blue')
+results %>%
+  ggplot(aes(x = perc.over)) +
+  geom_line(aes(y = auc_cv, color = 'cross-validation')) +
+  geom_point(aes(y = auc_cv, color = 'cross-validation')) +
+  geom_errorbar(aes(ymin=auc_cv-std, ymax=auc_cv+std), width=.2,
+                position=position_dodge(0.05)) +
+  geom_line(aes(y = auc_test_data, color = 'test on test_data')) +
+  geom_point(aes(y = auc_test_data, color = 'test on test_data')) + 
+  ggtitle('Tuning SMOTE perc.over parameter') +
+  scale_color_manual(values = colors)
+
+
+################### Balanced data set ##################
+smoted_data <- SMOTE('is_attributed' ~., data = train_data, perc.over = 20000, k = 5,
+                     perc.under = 200, set.seed = 1045)
+
+# Plot classes proportions
+smoted_data %>% group_by(is_attributed) %>%
+  summarise(n = n()) %>%
+  mutate(is_attributed = ifelse(is_attributed == 'no', 'Clique', 'Download')) %>%
+  mutate(n = n*100/sum(n)) %>%
+  arrange((n)) %>%
+  mutate(ypos = cumsum(n)-0.5*n) %>%
+  mutate(label = paste(round(n,3), '%', sep='')) %>%
+  ggplot(aes(x="", y=n, fill=is_attributed)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void() + 
+  geom_text(aes(y = ypos, label = label), color = "white")
+
+######## Training C5.0 model with balanced data #########################
+grid <- expand.grid(.winnow = c(TRUE), .trials=c(1), .model="tree" )
 
 set.seed(1045)
-C50_rf_mda <- C5.0(x = train_set[,..var] , y = train_set$is_attributed, trials = 10)
+c50_base.smote <- train(x = smoted_data[, -c('is_attributed')],
+                        y = smoted_data$is_attributed,
+                        metric = 'ROC',
+                        tuneGrid = grid, 
+                        trControl = fitControl, method="C5.0",verbose=FALSE)
 
-evaluate_model(model = C50_rf_mda, test_set = test, variables = var, target_name = 'is_attributed')
-# ROC-AUC: 0.81, PR-AUC: 0.16, precision: 0.25, recall: 0.63, F1: 0.36.
+plot(varImp(c50_base.smote))
+# Adding the results to training results dataframe
+predictive_modeling_results <- rbind(predictive_modeling_results, 
+                                     cbind(setNames(as.data.frame(c('c50_base.smote')), c('model')), 
+                                           c50_base.smote$results[,-c(1:3)]))
 
-## Balancing data using ROSE
-balanced <- ROSE(is_attributed ~.,data = train_set[,c(6,18:21,9,8,10,12)])$data
+
+## Saving the model 
+saveRDS(c50_base.smote, "models/c50_base_smote.rds")
+
+
+# Evaluating model c50_base.model with training data
+pred <- as.data.frame(evaluate_model_prob(c50_base.smote, test_data[,-c('is_attributed')],
+                                          test_data$is_attributed))
+
+# saving results in predictions dataframe
+predictions <- rbind(predictions, 
+                     cbind(setNames(as.data.frame(c('c50_base.smote')), c('model')), pred))
+
+
+
+########### Training C5.0 model with balanced data and tunning parameters ####################
+grid <- expand.grid(.winnow = c(TRUE, FALSE), .trials=c(1,3,6,9,12,14,20), .model="tree")
+
+set.seed(1042)
+c50model <- train(x = smoted_data[, -c('is_attributed')],
+                  y = smoted_data$is_attributed,
+                  metric = 'ROC',
+                  tuneGrid = grid, 
+                  trControl = fitControl, method="C5.0",verbose=FALSE)
+
+# Plot of the cross-validation results
+plot(c50model)
+plot(varImp(c50model))
+
+# Best tune: trials = 20, model = tree, winnow = TRUE 
+c50model$bestTune
+
+# saving the results of grid search with cross-validation
+write.csv(x = c50model$results, file = 'c50tuning.csv', row.names = FALSE)
+#c50_tuning <- read.csv('c50tuning.csv')
+
+# Saving best performance in predictive_modeling_results dataframe
+best_performance <- c50model$results%>%
+  filter(ROC == max(ROC)) %>%
+  select(-c(model, winnow, trials))
+
+predictive_modeling_results <- rbind(predictive_modeling_results, 
+                                     cbind(setNames(as.data.frame(c('c50model_balanced')), c('model')), 
+                                           best_performance))
+
+## Saving the model 
+saveRDS(c50model, "models/c50model_smote_tuned.rds")
+
+
+# Evaluating model c50_base.model with training data
+pred <- as.data.frame(evaluate_model_prob(c50model, test_data[,-c('is_attributed')],
+                                          test_data$is_attributed))
+
+# saving results in predictions dataframe
+predictions <- rbind(predictions, 
+                     cbind(setNames(as.data.frame(c('c50model_smote_tuned')), c('model')), pred))
+
+
+
+############# Training Knn ########################
+set.seed(1042)
+knnFit <- train(x = smoted_data[, -c('is_attributed')],
+                y = smoted_data$is_attributed, 
+                method = "knn",
+                metric = 'ROC',
+                trControl = fitControl, 
+                preProcess = c("center","scale"), 
+                tuneLength = 10)
+
+
+plot(knnFit)
+plot(varImp(knnFit))
+
+# Best tune: k = 17
+knnFit$bestTune
+
+# Saving the results of best performance
+best_knn_perf <- knnFit$results %>%
+  filter(ROC==max(ROC)) %>%
+  select(-c(k))
+
+predictive_modeling_results <- rbind(predictive_modeling_results, 
+                                     cbind(setNames(as.data.frame(c('knn')), c('model')), 
+                                           best_knn_perf))
+
+
+## Saving the model 
+saveRDS(knnFit, "models/knn.rds")
+
+
+# Evaluating model c50_base.model with training data
+pred <- as.data.frame(evaluate_model_prob(knnFit, test_data[,-c('is_attributed')],
+                                          test_data$is_attributed))
+
+# saving results in predictions dataframe
+predictions <- rbind(predictions, 
+                     cbind(setNames(as.data.frame(c('kNN')), c('model')), pred))
+
+
+##### Training Random Forest #####
+# Random Forest can not handle categorical predictors with more than 53 categories. Thus,
+# ip, app, device, os and channel attributes will be removed from the data.
+names(smoted_data)
+smoted_data_rf <- smoted_data[, -c(1:5)]
+test_data_rf <- test_data[, -c(1:5)]
 
 set.seed(1045)
-C50_rf_mda_balanced <- C5.0(x = balanced[,var] , y = balanced$is_attributed, trials = 10)
+rfFit <- train(x = smoted_data_rf,
+               y = smoted_data$is_attributed, 
+               method = "rf",
+               metric = 'ROC',
+               trControl = fitControl, 
+               tuneLength = 10)
 
-evaluate_model(model = C50_rf_mda_balanced, test_set = test, variables = var, target_name = 'is_attributed')
+plot(varImp(rfFit))
+plot(rfFit)
 
-# It is observed that balancing the data with Rose did not improve the model.
+# Best tune: mtry = 2
+rfFit$bestTune
 
-### Gini 
-var = names(train_set)[c(8,18,19,20,11,10)]
+# Saving the results of best performance
+best_rf_perf <- rfFit$results %>%
+  filter(ROC==max(ROC)) %>%
+  select(-c(mtry))
 
-set.seed(1045)
-C50_rf_gini <- C5.0(x = train_set[,..var] , y = train_set$is_attributed, trials = 10)
-
-evaluate_model(model = C50_rf_gini, test_set = test, variables = var, target_name = 'is_attributed')
-# ROC-AUC: 0.81, PR-AUC: 0.16, precision: 0.25, recall: 0.63, F1: 0.36.
-# Comparable to Mean Decrease Accuracy model.
-
-## Balanced data 
-balanced <- ROSE(is_attributed ~.,data = train_set[,c(6,12,8,18,19,9,20,11,10)])$data
-
-set.seed(1045)
-C50_rf_gini_balanced <- C5.0(x = balanced[,-c(1)] , y = balanced$is_attributed, trials = 10)
-
-evaluate_model(model = C50_rf_gini_balanced, test_set = test, variables = names(balanced), target_name = 'is_attributed')
-
+# Saving best performance 
+predictive_modeling_results <- rbind(predictive_modeling_results, 
+                                     cbind(setNames(as.data.frame(c('Random Forest')), c('model')), 
+                                           best_rf_perf))
 
 
-## Variables with sufixe resp_group will not be tested because they presented lower importance than those
-# with sufixe group.
+## Saving the model 
+saveRDS(rfFit, "models/rforest.rds")
 
-################# xgbTree ######################
-# To apply this algorithm, the predictor factor variables must be encoded (numeric).
-# after that, predictor variables must be converted into Dmatrix, data structure 
-# that XGBoost supports and gives it acclaimed performance and efficiency gains.
 
-# XGBoost hyperparameters
-# learning_rate: step size shrinkage used to prevent overfitting [0,1], lower bet means robustness
-# max_depth: determines how deeply each tree is allowed to grow
-# subsample: percentage of samples used per tree. Low value can lead to underfitting.
-# colsample_bytree: percentage of features used per tree. High value can lead to overfitting.
-# n_estimators: number of trees you want to build.
-# objective: determines the loss function to be used like reg:linear for regression problems,
-# reg:logistic for classification problems with only decision, binary:logistic for classification
-# problems with probability.
-# nrounds: number of passes on the data. The more complex the relationship between the features and the
-# label is, the more passes will be needed. Each pass will enhance the model by reducing the difference
-# between ground truth and prediction.
+# Evaluating model c50_base.model with training data
+pred <- as.data.frame(evaluate_model_prob(rfFit, test_data_rf,
+                                          test_data$is_attributed))
 
-# The smaller the score in each node is, the better the structure of the tree is.
-# https://xgboost.readthedocs.io/en/latest/R-package/xgboostPresentation.html
+# saving results in predictions dataframe
+predictions <- rbind(predictions, 
+                     cbind(setNames(as.data.frame(c('Random Forest')), c('model')), pred))
 
-# Preparing the data. XGBoost accepts only numeric data. If the data is numeric, then it is only necessary to 
-# create a DMatrix and train the xgboost. In cases where variables are categorical, we can create a sparce
-# matrix, where all categorical variables will be transformed into numeric features with binary values of
-# 0 and 1. This method is called one-hot encoding.
 
-# Evaluating xgboost performance with all variables
-var = names(train_set)[c(18:21,9,8,10,12,6)]
-balanced <- ROSE(is_attributed ~.,data = train_set[,c(6,18:21,9,8,10,12)])$data
 
-prediction1 <- train_xgboost(target = 'is_attributed', variables = var,
-                            train_dataset = balanced, test_dataset = test)
+##### Training Gradient Boosting #####
+library(gbm)
 
-evaluate_model(NULL, test, 'is_attributed', predictions = prediction1$predictions)
+gbmGrid <-  expand.grid(interaction.depth = c(1, 5, 9), 
+                        n.trees = (1:10)*50, 
+                        shrinkage = c(0.01,0.1,1),
+                        n.minobsinnode = c(10,15,20))
 
-# Improvement in recall (0.72) was accomplished with xgboost and ROC-AUC also improved to 0.85.
+set.seed(825)
+gbmFit2 <- train(x = smoted_data[, -c('is_attributed')],
+                 y = smoted_data$is_attributed, 
+                 method = "gbm", 
+                 trControl = fitControl, 
+                 verbose = FALSE, 
+                 metric = 'ROC',
+                 tuneGrid = gbmGrid)
 
-## Let's try SMOTE to balance the data
+plot(gbmFit2)
+plot(varImp(gbmFit2))
 
-# perc_over controls the over-sampling of the minority class
-# perc_under controls the under-sampling of the majority class
-over_sample = c(100,300,700,1000,1500,2000,2500)
+# Best tune: n.trees = 500, interaction.depth = 5, shrinkage = 0.1, n.minobsinnode = 20
+gbmFit2$bestTune
 
-names = names(train_set)[c(18:21,9,8,10,12,6)]
-learner = c(1:3)
-for(i in learner){
-  grid_search_smote(train_data = train_set, test_data = test, target = 'is_attributed', 
-                    features = names, oversamples = over_sample, model = i)
+# Saving the results of the best performance
+gbm_rf_perf <- gbmFit2$results %>%
+  filter(ROC==max(ROC)) %>%
+  select(-c(shrinkage,interaction.depth,n.minobsinnode,n.trees))
+
+predictive_modeling_results <- rbind(predictive_modeling_results, 
+                                     cbind(setNames(as.data.frame(c('GBM')), c('model')), 
+                                           gbm_rf_perf))
+
+## Saving the model 
+saveRDS(gbmFit2, "models/gbm.rds")
+
+
+# Evaluating model c50_base.model with training data
+pred <- as.data.frame(evaluate_model_prob(gbmFit2, test_data[,-c('is_attributed')],
+                                          test_data$is_attributed))
+
+# saving results in predictions dataframe
+predictions <- rbind(predictions, 
+                     cbind(setNames(as.data.frame(c('Gradient Boosting')), c('model')), pred))
+
+
+
+### Saving results
+write.csv(predictive_modeling_results, 'predictive_modeling_results.csv', row.names = FALSE)
+write.csv(predictions, 'predictions.csv', row.names = FALSE)
+
+
+## Prediction results
+library(viridis)
+library(hrbrthemes)
+
+# Comparing C5.0 models
+melt(predictions[c(1:3),], id.vars = 'model', measure.vars = c('roc_auc', 'prc_auc')) %>%
+  ggplot(aes(x=model, y = value, fill = variable)) +
+  geom_col(position="dodge") + 
+  scale_fill_viridis(discrete = T) +
+  ylim(0,1) +
+  xlab('') +
+  ylab('AUC') +
+  ggtitle('Performance dos modelos C5.0')
+
+# Comparing tuned models
+melt(predictions[c(3:6),], id.vars = 'model', measure.vars = c('roc_auc', 'prc_auc')) %>%
+  ggplot(aes(x=model, y = value, fill = variable)) +
+  geom_col(position="dodge") + 
+  scale_fill_viridis(discrete = T) +
+  ylim(0,1) +
+  xlab('')+
+  ylab('AUC') +
+  ggtitle('Comparação entre os modelos de diferentes algoritmos')
+
+
+##### Comparing the performances of C5.0 and GBM models with new data
+
+### Importing models
+c50_smote_tuned <- readRDS('models/c50model_smote_tuned.rds')
+gbmFit <- readRDS('models/gbm.rds')
+
+
+# Predictions to plot ROC and PRC curves
+predictions_c50_smote_tuned <- predict(c50_smote_tuned, newdata = test_data[,-c('is_attributed')], 
+                                       type = 'prob')[,2]
+predictions_gbm <- predict(gbmFit, newdata = test_data[,-c('is_attributed')], type = 'prob')[,2]
+
+
+models_predictions <- prediction(list(predictions_c50_smote_tuned,
+                                      predictions_gbm),
+                                 labels =rep(list(test_data$is_attributed),2))
+
+## Preparing ROC curves
+rocs <- performance(models_predictions, "tpr", "fpr")
+
+# Creating the legends
+roc_legend <- c()
+for(i in 1:(nrow(predictions)-1)){
+  roc_legend <- c(roc_legend, paste(predictions$model[i+1],'AUC -',round(predictions$roc_auc[i+1],3)))
 }
 
-### Final model #####
 
-# The best model was C5.0 with smote technique to balance the classes.
-var = names(train_set)[c(18:21,9,8,10,12,6)]
-set.seed(1045)
-smoted_data <- SMOTE(is_attributed ~., data = train_set[,..var], perc.over = 1500, k = 5,
-                     perc.under = 400)
+## Preparing Precision-Recall Curves
+prc_curve <- performance(models_predictions, "prec", "rec")
 
-var1 <- var[var != 'is_attributed']
-set.seed(1045)
-model_final <- C5.0(x = smoted_data[,..var1] , y = smoted_data$is_attributed, trials = 10)
-evaluate_model(model = model_final, test_set = test, variables = var1, target_name = 'is_attributed')
+# Creating the legends
+prc_legend <- c()
+for(i in 1:(nrow(predictions)-1)){
+  prc_legend <- c(prc_legend, paste(predictions$model[i+1],'AUC -',round(predictions$prc_auc[i+1],3)))
+}
+
+prc_legend <- c(prc_legend, 'No Skill')
+
+
+# Plotting the curves
+par(mfrow = c(1, 2))
+
+plot(rocs, col=as.list(1:2), lwd= 2, main="Curvas ROC",
+     xlab = 'Taxa de Falso Positivos',
+     ylab = 'Taxa de Verdadeiro Positivos')
+legend(x="bottomright", bty = 'n',
+       legend=roc_legend[c(2,5)], 
+       fill=1:2)
+
+plot(prc_curve, col=as.list(1:2),
+     lwd= 2,
+     main= "Curvas Precisão/Recall",
+     xlab = "Taxa de Verdadeiro Positivos",
+     ylab = 'Precisão')
+abline(h = 0.0023, col="green", lty=2, lwd=3)
+legend(x="topright", bty = 'n',
+       legend= prc_legend[c(2,5,6)], fill = c(1:3))
+
+
+
+# Creating a confusion matrix
+# https://cran.r-project.org/web/packages/cvms/vignettes/Creating_a_confusion_matrix.html
+library(cvms)
+
+# Making predictions C5.0 using threshold = 0.5
+pred_best_thres_c50 = round(predictions_c50_smote_tuned > .5)
+
+
+c50_results <- cbind(as.data.frame(ifelse(test_data$is_attributed == 'no',0,1)), 
+                     as.data.frame(pred_best_thres_c50)) 
+names(c50_results) <- c('observed','predicted')
+
+cm_c50 <- c50_results %>%
+  group_by(observed,predicted) %>%
+  summarise(n = n())
+
+c50 <- plot_confusion_matrix(cm_c50, 
+                      target_col = "observed", 
+                      prediction_col = "predicted",
+                      counts_col = "n",
+                      add_counts = FALSE,
+                      font_normalized = font(size = 6),
+                      font_col_percentages = font(size = 4),
+                      font_row_percentages = font(size = 4))
+
+# Making predictions Gradient Boosting using threshold = 0.5
+pred_gbm = round(predictions_gbm > .5)
+
+gbm_results <- cbind(as.data.frame(ifelse(test_data$is_attributed == 'no',0,1)), 
+                     as.data.frame(pred_gbm)) 
+names(gbm_results) <- c('observed','predicted')
+
+cm_gbm <- gbm_results %>%
+  group_by(observed,predicted) %>%
+  summarise(n = n())
+
+gbm <- plot_confusion_matrix(cm_gbm, 
+                      target_col = "observed", 
+                      prediction_col = "predicted",
+                      counts_col = "n",
+                      add_counts = FALSE,
+                      font_normalized = font(size = 6),
+                      font_col_percentages = font(size = 4),
+                      font_row_percentages = font(size = 4))
+
+grid.arrange(c50, gbm, ncol = 2)
+
+
+### Predictions in the Best threshold considering ROC
+
+# The best threshold is estimated using Youden's J statistic
+# J_youdens = true_positive_rate - false_positive_rate
+rocs@y.name
+rocs@x.name
+
+## C5.0 model
+index1 = which.max(rocs@y.values[[1]] - rocs@x.values[[1]])
+threshold_c5model = rocs@alpha.values[[1]][index1]
+
+# making predictions using threshold_c5model
+pred_best_thres_c50 = factor(round(predictions_c50_smote_tuned > threshold_c5model), labels = c('no','yes'))
+
+# confusion matrix
+confusionMatrix(pred_best_thres_c50, test_data$is_attributed, positive = 'yes', mode = "prec_recall")
+
+## GBM model
+index2 = which.max(rocs@y.values[[2]] - rocs@x.values[[2]])
+threshold_gbm = rocs@alpha.values[[2]][index2]
+
+# making predictions using threshold_gbm
+pred_best_thres_gbm = factor(round(predictions_gbm > threshold_gbm), labels = c('no','yes'))
+
+# confusion matrix
+confusionMatrix(pred_best_thres_gbm, test_data$is_attributed, positive = 'yes', mode = "prec_recall")
+
+

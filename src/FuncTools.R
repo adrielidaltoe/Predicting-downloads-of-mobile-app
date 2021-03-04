@@ -133,9 +133,10 @@ group_target_prop <- function(dataframe, variable, target){
 }
 
 
-# Function for evaluating the model
+# Functions for evaluating models
 evaluate_model <- function(model, test_set, target_name, variables = NULL, predictions = NULL){
-  # This function evaluates models from different algorithms
+  
+  # This function evaluates models from different algorithms based on predicted classes
   # Test_set must be a dataframe, not a sparce matrix 
   
   # predictions
@@ -145,21 +146,34 @@ evaluate_model <- function(model, test_set, target_name, variables = NULL, predi
     pred = as.factor(predictions)
   }
   # Confusion Matrix (caret)
-  print(confusionMatrix(pred, test_set[[target_name]], positive = '1', mode = "prec_recall"))
+  print(confusionMatrix(pred, test_set[[target_name]], positive = 'yes', mode = "prec_recall"))
   # Data for ROC and precision-recall curves
   scores = data.frame(pred, test_set[[target_name]])
   names(scores) <- c('pred','true')
   # scores.class0 = positive class, scores.class1 = negative class
   # AUC/ROC curve
-  roccurve <- PRROC::roc.curve(scores.class0 = scores[scores$true == 1,]$pred, 
-                               scores.class1 = scores[scores$true == 0,]$pred, 
+  roccurve <- PRROC::roc.curve(scores.class0 = scores[scores$true == 'yes',]$pred, 
+                               scores.class1 = scores[scores$true == 'no',]$pred, 
                                curve = TRUE)
   plot(roccurve)
   # AUCPR curve
-  prcurve <- PRROC::pr.curve(scores.class0 = scores[scores$true == 1,]$pred,
-                             scores.class1 = scores[scores$true == 0,]$pred,
+  prcurve <- PRROC::pr.curve(scores.class0 = scores[scores$true == 'yes',]$pred,
+                             scores.class1 = scores[scores$true == 'no',]$pred,
                              curve = TRUE)
   plot(prcurve)
+}
+
+evaluate_model_prob <- function(model, test_data, labels){
+  
+  # This function returns roc_auc and prc_auc based on predicted probabilities
+  
+  pred = predict(model, newdata = test_data, type = 'prob')
+  
+  pred<-prediction(pred[, 2], labels= labels)
+  
+  auc_roc <- performance(pred, measure = "auc")
+  auc_prc <- performance(pred, measure = "aucpr")
+  return(list('roc_auc' = auc_roc@y.values[[1]], 'prc_auc' = auc_prc@y.values[[1]]))
 }
 
 # Change factor values to numeric
